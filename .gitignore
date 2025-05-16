@@ -1,0 +1,11 @@
+# Ignore environment files
+.env
+allowed_users.txt
+roughwork.txt
+
+# Ignore Python cache and environment folders
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
