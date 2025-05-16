@@ -3,18 +3,18 @@ import json
 import logging
 import firebase_admin
 from firebase_admin import credentials, db
-from datetime import datetime
+from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes, CallbackContext
 )
-import asyncio
-from dotenv import load_dotenv
 from admin_utils import is_admin, add_admin, ensure_first_admin, load_admins
+from dotenv import load_dotenv
+import nest_asyncio
 
-load_dotenv()
+load_dotenv()  # Load env vars locally
 
-# Load Firebase credentials
+# Initialize Firebase
 firebase_creds = json.loads(os.environ["FIREBASE_CREDENTIALS"])
 firebase_db_url = os.getenv("FIREBASE_DB_URL")
 if not firebase_db_url:
@@ -25,29 +25,28 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': firebase_db_url
 })
 
-# Allowed users
+# Constants
+TASKS_DB_REF = "tasks"
+
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# Load allowed users (optional restriction)
 allowed_users_env = os.getenv("ALLOWED_USERS", "").strip()
 if allowed_users_env:
     ALLOWED_USERS = set(int(uid.strip()) for uid in allowed_users_env.replace(",", "\n").splitlines() if uid.strip())
 else:
-    ALLOWED_USERS = None
+    ALLOWED_USERS = None  # No restriction
 
 def is_user_allowed(user_id: int) -> bool:
     if ALLOWED_USERS is None:
         return True
     return user_id in ALLOWED_USERS
 
-# Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# Firebase tasks key
-TASKS_DB_REF = "tasks"
-
-# === TASKS ===
-
+# Firebase task helpers
 async def load_tasks():
     tasks = db.reference(TASKS_DB_REF).get()
     if not tasks:
@@ -71,16 +70,13 @@ def generate_task_id(tasks):
         return 1
     return max(t["id"] for t in tasks) + 1
 
-# === COMMANDS ===
-
+# Command Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     ensure_first_admin(user_id)
-
     if not is_user_allowed(user_id):
         await update.message.reply_text("Access denied.")
         return
-
     await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done commands.")
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -162,12 +158,11 @@ async def done_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_tasks(tasks)
     await update.message.reply_text(f"Marked task [{task_id}] as completed.")
 
-# === REMINDERS & ANNOYANCE ===
-
+# Reminder and annoyance logic
 async def remind_overdue_tasks(application):
     tasks = await load_tasks()
-    now = datetime.utcnow()
-    overdue = [t for t in tasks if not t["completed"] and datetime.strptime(t["deadline"], "%Y-%m-%d") < now]
+    now = datetime.utcnow().date()
+    overdue = [t for t in tasks if not t["completed"] and datetime.strptime(t["deadline"], "%Y-%m-%d").date() < now]
     for task in overdue:
         for admin_id in load_admins():
             try:
@@ -178,24 +173,38 @@ async def remind_overdue_tasks(application):
             except Exception as e:
                 logging.error(f"Failed to send reminder to {admin_id}: {e}")
 
-async def remind_callback(context: CallbackContext):
-    await remind_overdue_tasks(context.application)
-
 async def annoy_users(application):
+    tasks = await load_tasks()
+    now = datetime.utcnow().date()
     admins = load_admins()
     for uid in admins:
+        # Filter user's incomplete tasks
+        user_tasks = [t for t in tasks if not t["completed"]]
+        overdue_tasks = [t for t in user_tasks if datetime.strptime(t["deadline"], "%Y-%m-%d").date() < now]
+        due_today_tasks = [t for t in user_tasks if datetime.strptime(t["deadline"], "%Y-%m-%d").date() == now]
+
         try:
-            await application.bot.send_message(
-                chat_id=uid,
-                text="😠 Why haven’t you completed your tasks yet?!"
-            )
+            if overdue_tasks:
+                await application.bot.send_message(
+                    chat_id=uid,
+                    text="😠 Why haven’t you completed your tasks yet?! Some are overdue!"
+                )
+            elif due_today_tasks:
+                await application.bot.send_message(
+                    chat_id=uid,
+                    text="💪 Keep going! You have tasks due today. You can do it!"
+                )
+            # else no message if no pending tasks today or overdue
         except Exception as e:
-            logging.error(f"Annoyance failed: {e}")
+            logging.error(f"Annoyance failed for {uid}: {e}")
+
+async def remind_callback(context: CallbackContext):
+    application = context.application
+    await remind_overdue_tasks(application)
 
 async def annoyance_callback(context: CallbackContext):
-    await annoy_users(context.application)
-
-# === MAIN ===
+    application = context.application
+    await annoy_users(application)
 
 async def main():
     token = os.getenv("BOT_TOKEN")
@@ -210,15 +219,15 @@ async def main():
     application.add_handler(CommandHandler("list", list_tasks))
     application.add_handler(CommandHandler("done", done_task))
 
-    # Hourly reminders and annoyance every 2 hours
+    # Schedule reminders and annoyance jobs
     application.job_queue.run_repeating(remind_callback, interval=3600, first=10)
     application.job_queue.run_repeating(annoyance_callback, interval=7200, first=30)
 
     print("Bot is running...")
+
     await application.run_polling()
 
 if __name__ == "__main__":
-    import nest_asyncio
     nest_asyncio.apply()
-
+    import asyncio
     asyncio.run(main())
