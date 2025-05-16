@@ -111,6 +111,57 @@ Currently supports:
 
 ---
 
+### Future Work / Planned Features
+
+The current version of DoPing is stable for basic task management with Firebase-backed persistence. Here are potential future upgrades:
+🔧 Feature Improvements
+
+    Dynamic Admin Management:
+
+        Add /addadmin <user_id> and /removeadmin <user_id> commands (admin-only).
+
+        Add /admins command to list current admins.
+
+    User Notifications:
+
+        Let users snooze reminders (/snooze) or customize frequency.
+
+        Add ability to enable/disable annoying reminders per user.
+
+    Task Enhancements:
+
+        Add task priorities and categories (e.g., Work, Personal).
+
+        Support editing or deleting tasks.
+
+        Support time-based deadlines (not just dates).
+
+    Data Privacy / User Isolation:
+
+        Scope tasks per user (instead of shared global task list).
+
+        Add per-user Firebase paths (e.g., /tasks/<user_id>/).
+
+☁️ Deployment Improvements
+
+    Secrets Management:
+
+        Use secrets manager instead of .env for more secure deployment.
+
+        Separate Firebase key per environment (prod/dev).
+
+    CI/CD Integration:
+
+        GitHub Actions to auto-deploy to Render on push.
+
+🧠 Intelligence
+
+    Smart Nudging:
+
+        Use task urgency and history to decide when/how to remind or annoy.
+
+        AI-generated motivation or guilt messages.
+
 ### 👨‍💻 Author
 
 Built with love by \Nuttyss.
