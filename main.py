@@ -215,4 +215,22 @@ async def main():
 if __name__ == "__main__":
     import nest_asyncio
     nest_asyncio.apply()
-    asyncio.run(main())
+
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        print("Error: BOT_TOKEN environment variable not set.")
+        exit(1)
+
+    application = ApplicationBuilder().token(token).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("add", add_task))
+    application.add_handler(CommandHandler("list", list_tasks))
+    application.add_handler(CommandHandler("done", done_task))
+
+    application.job_queue.run_repeating(remind_callback, interval=3600, first=10)
+    application.job_queue.run_repeating(annoyance_callback, interval=7200, first=30)
+
+    print("Bot is running...")
+    application.run_polling()
+
