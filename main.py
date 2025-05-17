@@ -3,7 +3,7 @@ import json
 import logging
 import firebase_admin
 from firebase_admin import credentials, db
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes, CallbackContext
@@ -58,7 +58,7 @@ async def load_tasks():
         return []
     if isinstance(tasks, dict):
         return [t for t in tasks.values() if isinstance(t, dict)]
-    return [t for t in tasks if isinstance(t, dict)]
+    return tasks
 
 async def save_tasks(tasks):
     tasks_dict = {str(t["id"]): t for t in tasks}
@@ -66,14 +66,13 @@ async def save_tasks(tasks):
 
 def get_task_by_id(tasks, task_id):
     for t in tasks:
-        if t["id"] == task_id:
+        if t and t.get("id") == task_id:
             return t
     return None
 
 def generate_task_id(tasks):
-    if not tasks:
-        return 1
-    return max(t["id"] for t in tasks) + 1
+    valid_ids = [t["id"] for t in tasks if t and "id" in t]
+    return max(valid_ids, default=0) + 1
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -83,7 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Access denied.")
         return
 
-    await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done.")
+    await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done, /delete.")
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -111,7 +110,8 @@ async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "description": description,
         "deadline": deadline_str,
         "completed": False,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
+        "completed_at": None
     }
     tasks.append(task)
     await save_tasks(tasks)
@@ -131,7 +131,7 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = []
     for t in tasks:
-        if t is None:
+        if not t:
             continue
         status = "✅" if t.get("completed") else "❌"
         lines.append(f"[{t['id']}] {status} {t['description']} (due {t['deadline']})")
@@ -163,8 +163,50 @@ async def done_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     task["completed"] = True
+    task["completed_at"] = datetime.utcnow().isoformat()
     await save_tasks(tasks)
     await update.message.reply_text(f"Marked task [{task_id}] as completed.")
+
+async def delete_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_user_allowed(user_id):
+        await update.message.reply_text("Access denied.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /delete <task_id>")
+        return
+
+    try:
+        task_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Task ID must be a number.")
+        return
+
+    tasks = await load_tasks()
+    new_tasks = [t for t in tasks if t.get("id") != task_id]
+
+    if len(new_tasks) == len(tasks):
+        await update.message.reply_text(f"No task found with ID {task_id}.")
+        return
+
+    await save_tasks(new_tasks)
+    await update.message.reply_text(f"Deleted task with ID {task_id}.")
+
+async def clean_old_tasks():
+    tasks = await load_tasks()
+    now = datetime.utcnow()
+    new_tasks = []
+
+    for t in tasks:
+        if t.get("completed") and t.get("completed_at"):
+            completed_time = datetime.fromisoformat(t["completed_at"])
+            if (now - completed_time).days >= 14:
+                continue  # skip adding to new list, i.e., delete
+        new_tasks.append(t)
+
+    if len(new_tasks) < len(tasks):
+        await save_tasks(new_tasks)
 
 async def remind_users(application):
     tasks = await load_tasks()
@@ -198,6 +240,7 @@ async def remind_users(application):
 
 async def reminder_callback(context: CallbackContext):
     await remind_users(context.application)
+    await clean_old_tasks()
 
 if __name__ == "__main__":
     import nest_asyncio
@@ -214,6 +257,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("add", add_task))
     application.add_handler(CommandHandler("list", list_tasks))
     application.add_handler(CommandHandler("done", done_task))
+    application.add_handler(CommandHandler("delete", delete_task))
 
     # Reminder job
     application.job_queue.run_repeating(reminder_callback, interval=3600, first=10)
