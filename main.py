@@ -234,4 +234,12 @@ if __name__ == "__main__":
     application.job_queue.run_repeating(reminder_callback, interval=3600, first=10)
 
     print("Bot is running...")
-    application.run_polling()
+    PORT = int(os.environ.get("PORT", 8443))
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Set this in your environment (e.g. https://your-app.onrender.com)
+
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=WEBHOOK_URL,
+    )
+
