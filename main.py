@@ -235,11 +235,11 @@ if __name__ == "__main__":
 
     print("Bot is running...")
     PORT = int(os.environ.get("PORT", 8443))
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Set this in your environment (e.g. https://your-app.onrender.com)
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Should be like "https://your-app.onrender.com"
 
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+        webhook_url=WEBHOOK_URL
     )
 
