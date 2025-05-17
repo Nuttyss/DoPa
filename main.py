@@ -13,11 +13,11 @@ from dotenv import load_dotenv
 from admin_utils import is_admin, add_admin, ensure_first_admin, load_admins
 
 # Hack: Bind a dummy HTTP server to keep Render Web Service happy
-try:
-    import dummy_webserver
-    dummy_webserver.start()
-except Exception as e:
-    print(f"Dummy webserver failed to start: {e}")
+# try:
+#     import dummy_webserver
+#     dummy_webserver.start()
+# except Exception as e:
+#     print(f"Dummy webserver failed to start: {e}")
 
 load_dotenv()  # Load .env if exists (local dev)
 
