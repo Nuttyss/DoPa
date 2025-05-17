@@ -58,7 +58,7 @@ async def load_tasks():
         return []
     if isinstance(tasks, dict):
         return [t for t in tasks.values() if isinstance(t, dict)]
-    return tasks
+    return [t for t in tasks if isinstance(t, dict)]
 
 async def save_tasks(tasks):
     tasks_dict = {str(t["id"]): t for t in tasks}
