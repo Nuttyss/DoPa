@@ -3,7 +3,7 @@ import json
 import logging
 import firebase_admin
 from firebase_admin import credentials, db
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes, CallbackContext
@@ -12,9 +12,16 @@ import asyncio
 from dotenv import load_dotenv
 from admin_utils import is_admin, add_admin, ensure_first_admin, load_admins
 
+# Hack: Bind a dummy HTTP server to keep Render Web Service happy
+try:
+    import dummy_webserver
+    dummy_webserver.start()
+except Exception as e:
+    print(f"Dummy webserver failed to start: {e}")
+
 load_dotenv()  # Load .env if exists (local dev)
 
-# Initialize Firebase
+# Firebase setup
 firebase_creds = json.loads(os.environ["FIREBASE_CREDENTIALS"])
 firebase_db_url = os.getenv("FIREBASE_DB_URL")
 if not firebase_db_url:
@@ -25,7 +32,7 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': firebase_db_url
 })
 
-# Allowed users from env (optional)
+# Allowed users
 allowed_users_env = os.getenv("ALLOWED_USERS", "").strip()
 if allowed_users_env:
     ALLOWED_USERS = set(int(uid.strip()) for uid in allowed_users_env.replace(",", "\n").splitlines() if uid.strip())
@@ -42,6 +49,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Firebase keys
 TASKS_DB_REF = "tasks"
 
 async def load_tasks():
@@ -49,11 +57,8 @@ async def load_tasks():
     if not tasks:
         return []
     if isinstance(tasks, dict):
-        # Filter out None values if any
-        return [t for t in tasks.values() if t is not None]
-    elif isinstance(tasks, list):
-        return [t for t in tasks if t is not None]
-    return []
+        return [t for t in tasks.values() if isinstance(t, dict)]
+    return tasks
 
 async def save_tasks(tasks):
     tasks_dict = {str(t["id"]): t for t in tasks}
@@ -78,7 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Access denied.")
         return
 
-    await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done commands.")
+    await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done.")
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -126,6 +131,8 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = []
     for t in tasks:
+        if t is None:
+            continue
         status = "✅" if t.get("completed") else "❌"
         lines.append(f"[{t['id']}] {status} {t['description']} (due {t['deadline']})")
     await update.message.reply_text("\n".join(lines))
@@ -159,64 +166,47 @@ async def done_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_tasks(tasks)
     await update.message.reply_text(f"Marked task [{task_id}] as completed.")
 
-async def remind_overdue_tasks(application):
+async def remind_users(application):
     tasks = await load_tasks()
     now = datetime.utcnow()
-    overdue = [t for t in tasks if not t.get("completed") and datetime.strptime(t["deadline"], "%Y-%m-%d") < now]
-    for task in overdue:
-        for admin_id in load_admins():
-            try:
-                await application.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"⚠️ Task overdue: [{task['id']}] {task['description']} (due {task['deadline']})"
-                )
-            except Exception as e:
-                logging.error(f"Failed to send reminder to {admin_id}: {e}")
 
-async def encourage_today_pending_tasks(application):
-    tasks = await load_tasks()
-    now = datetime.utcnow().date()
-    # Pending tasks due today (not completed)
-    pending_today = [t for t in tasks if not t.get("completed") and datetime.strptime(t["deadline"], "%Y-%m-%d").date() == now]
-    if pending_today:
-        for admin_id in load_admins():
-            try:
-                await application.bot.send_message(
-                    chat_id=admin_id,
-                    text="💪 Keep it up! You have tasks due today. You can do it!"
-                )
-            except Exception as e:
-                logging.error(f"Failed to send encouragement to {admin_id}: {e}")
+    encouragements = []
+    warnings = []
 
-async def annoy_users(application):
-    tasks = await load_tasks()
-    now = datetime.utcnow()
-    overdue = [t for t in tasks if not t.get("completed") and datetime.strptime(t["deadline"], "%Y-%m-%d") < now]
-    if overdue:
-        admins = load_admins()
-        for uid in admins:
-            try:
-                await application.bot.send_message(
-                    chat_id=uid,
-                    text="😠 Why haven’t you completed your tasks yet?!"
-                )
-            except Exception as e:
-                logging.error(f"Annoyance failed: {e}")
+    for t in tasks:
+        if t.get("completed"):
+            continue
 
-async def remind_callback(context: CallbackContext):
-    application = context.application
-    await remind_overdue_tasks(application)
-    await encourage_today_pending_tasks(application)
+        deadline = datetime.strptime(t["deadline"], "%Y-%m-%d")
+        if deadline.date() < now.date():
+            warnings.append(t)
+        elif deadline.date() == now.date():
+            encouragements.append(t)
 
-async def annoyance_callback(context: CallbackContext):
-    application = context.application
-    await annoy_users(application)
+    admins = load_admins()
+    for uid in admins:
+        if encouragements:
+            await application.bot.send_message(
+                chat_id=uid,
+                text="💪 Keep going! You still have tasks to finish today!"
+            )
+        for task in warnings:
+            await application.bot.send_message(
+                chat_id=uid,
+                text=f"😠 Why haven’t you completed: [{task['id']}] {task['description']} (due {task['deadline']})"
+            )
 
-async def main():
+async def reminder_callback(context: CallbackContext):
+    await remind_users(context.application)
+
+if __name__ == "__main__":
+    import nest_asyncio
+    nest_asyncio.apply()
+
     token = os.getenv("BOT_TOKEN")
     if not token:
         print("Error: BOT_TOKEN environment variable not set.")
-        return
+        exit(1)
 
     application = ApplicationBuilder().token(token).build()
 
@@ -225,16 +215,8 @@ async def main():
     application.add_handler(CommandHandler("list", list_tasks))
     application.add_handler(CommandHandler("done", done_task))
 
-    # Run reminders and encouragement every hour, first delay 10s
-    application.job_queue.run_repeating(remind_callback, interval=3600, first=10)
-    # Run annoyance every 2 hours, first delay 30s
-    application.job_queue.run_repeating(annoyance_callback, interval=7200, first=30)
+    # Reminder job
+    application.job_queue.run_repeating(reminder_callback, interval=3600, first=10)
 
     print("Bot is running...")
-    await application.run_polling()
-
-if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
-    import asyncio
-    asyncio.run(main())
+    application.run_polling()
