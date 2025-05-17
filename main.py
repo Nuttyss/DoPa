@@ -240,6 +240,6 @@ if __name__ == "__main__":
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=WEBHOOK_URL,
+        WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
     )
 
