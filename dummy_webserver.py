@@ -1,5 +1,4 @@
 # dummy_webserver.py
-import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -9,9 +8,20 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"OK - DoPing is running")
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_POST(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"POST received - but this server does nothing.")
+
+    def log_message(self, format, *args):
+        return  # Suppress console logging
+
 def run_server():
-    PORT = int(os.environ.get("PORT", 10000))  # Use Render's PORT if set
-    server = HTTPServer(('0.0.0.0', PORT), SimpleHandler)
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHandler)
     server.serve_forever()
 
 def start():
