@@ -35,8 +35,8 @@
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/Nuttyss/DoPa_bot.git
-   cd DoPa_bot
+   git clone https://github.com/Nuttyss/DoPa.git
+   cd DoPa
    ```
 
 2. Install dependencies:
