@@ -135,6 +135,7 @@ You should see:
 - GitHub Actions for automatic CI/CD deployments  
 - Deployment options: local machine, Render, Firebase Functions, Docker
 
+🔐 Note: Previous token was exposed in history. It has been revoked. Please do not reuse tokens in Git.
 ---
 
 ### 🧠 Intelligence Layer (Future)
