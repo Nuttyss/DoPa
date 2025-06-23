@@ -79,7 +79,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_user_allowed(user_id):
         await update.message.reply_text("Access denied.")
         return
-    await update.message.reply_text("Hello! DoPing at your service. Use /add, /list, /done, /delete.")
+    await update.message.reply_text("Hello! DoPa at your service. Use /add, /list, /done, /delete.")
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
