@@ -92,6 +92,7 @@ You should see:
 ├── admin_utils.py        # Admin command utilities (optional)
 ├── dummy_webserver.py    # Lightweight HTTP server for uptime monitoring
 ├── main.py               # Main entry point
+├── License               # MIT License
 ├── notification_utils.py # Handles reminders and nudges
 ├── sample.py             # Sample or test code
 ├── requirements.txt      # Python dependencies
